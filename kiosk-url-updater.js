@@ -1,24 +1,12 @@
 /********************************************************
-Copyright (c) 2022 Cisco and/or its affiliates.
-This software is licensed to you under the terms of the Cisco Sample
-Code License, Version 1.1 (the "License"). You may obtain a copy of the
-License at
-               https://developer.cisco.com/docs/licenses
-All use of the material herein must be in accordance with the terms of
-the License. All rights not expressly granted by the License are
-reserved. Unless required by applicable law or agreed to separately in
-writing, software distributed under the License is distributed on an "AS
-IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
-or implied.
-*********************************************************
  * 
  * Macro Author:      	William Mills
  *                    	Technical Solutions Specialist 
  *                    	wimills@cisco.com
  *                    	Cisco Systems
  * 
- * Version: 1-0-0
- * Released: 07/21/22
+ * Version: 2-0-0
+ * Released: 01/10/24
  * 
  * This is a simple macro which automatically adds a Webex Devices 
  * deviceId as a URL parameter to the Kiosk URL. If it contains a 
@@ -27,9 +15,18 @@ or implied.
  * is changed via SSH, Web Interface or Control Hub. The macro will
  * inspect the URL for the keyword and insert the deviceId.
  * 
- * Example:
- * Kiosk URL set to: https://www.example.com?deviceId=$(deviceId)
- * Macro modifies it to: https://www.example.com?deviceId=123456789abcdefg
+ * For Example:
+ * 
+ * If you set the Kiosk URL set to: 
+ * https://www.example.com?deviceId=$(deviceId)
+ * 
+ * The Macro modifies it to:
+ * https://www.example.com?deviceId=123456789abcdefg
+ * 
+ * 
+ * Full Readme, source code and license details for this macro are available 
+ * on GitHub: https://github.com/wxsd-sales/kiosk-pwa-url-modifier
+ * 
  ********************************************************/
 
 import xapi from 'xapi';
@@ -38,45 +35,91 @@ import xapi from 'xapi';
 const keyword = '$(deviceId)';
 
 // This is used to store the devices ID in momory
-let deviceId = '';
+let deviceId = 'asdfas';
 
-function main() {
+setTimeout(checkUrls, 10000);
 
-  // Get and store the Developer ID
-  xapi.Status.Webex.DeveloperId.get()
-  .then(id => {
-    console.log('Device Id : ' + id);
-    deviceId = id;
-    // Initially check the URL
-    checkUrl();
-    // The monitor for changes
-    xapi.Config.UserInterface.Kiosk.URL.on(checkUrl);
-  })
-  .catch(err => {
-    console.log(err);
-    console.log('Unabled to get deviceId');
+xapi.Config.UserInterface.Kiosk.URL.on(checkKioskUrl)
+xapi.Config.UserInterface.HomeScreen.Peripherals.WebApp.URL.on(checkPWAUrl);
+xapi.Config.Standby.Signage.Url.on(checkSignageUrl);
+xapi.Event.UserInterface.Extensions.Widget.LayoutUpdated.on(checkWebApps);
+
+
+async function checkUrls() {
+  try {
+    deviceId = await xapi.Status.Webex.DeveloperId.get()
+  } catch (error) {
+    console.log('Unable to get Device Id from xStatus');
+  }
+
+  console.log('Checking URLs for Device Id Keyword')
+  checkKioskUrl();
+  checkPWAUrl();
+  checkSignageUrl
+  checkWebApps();
+}
+
+
+async function checkKioskUrl() {
+  let kioskUrl = '';
+  try {
+    kioskUrl = await xapi.Config.UserInterface.Kiosk.URL.get()
+  } catch (error) {
+    console.log('Kiosk Mode not available on device to check URL');
+  }
+
+  if (!kioskUrl.includes(keyword)) return
+  console.log('Updating PWA URL with Device Id');
+  xapi.Config.UserInterface.Kiosk.URL.set(kioskUrl.replace(keyword, deviceId))
+
+}
+
+async function checkPWAUrl() {
+  const pwaUrl = await xapi.Config.UserInterface.HomeScreen.Peripherals.WebApp.URL.get()
+  if (!pwaUrl.includes(keyword)) return
+  console.log('Updating PWA URL with Device Id');
+  xapi.Config.UserInterface.HomeScreen.Peripherals.WebApp.URL.set(pwaUrl.replace(keyword, deviceId))
+}
+
+async function checkSignageUrl() {
+  const signageUrl = await xapi.Config.Standby.Signage.Url.get()
+  if (!signageUrl.includes(keyword)) return
+  console.log('Updating Signage URL with Device Id');
+  xapi.Config.Standby.Signage.Url.set(signageUrl.replace(keyword, deviceId))
+}
+
+
+async function checkWebApps() {
+  const extensions = await xapi.Command.UserInterface.Extensions.List({ ActivityType: 'WebApp' });
+  if (!extensions.hasOwnProperty('Extensions')) return
+  if (!extensions.Extensions.hasOwnProperty('Panel')) return
+  const webapps = extensions.Extensions.Panel;
+  if (webapps.length == 0) return
+  webapps.forEach(webapp => {
+    if (!webapp.ActivityData.includes(keyword)) return
+    webapp.ActivityData = webapp.ActivityData.replace(keyword, deviceId);
+    saveWebApp(webapp)
   })
 }
 
-main();
 
-function checkUrl(){
-  
-  // Get the current Kiosk URL
-  xapi.Config.UserInterface.Kiosk.URL.get()
-  .then(kioskUrl => {
-    console.log('Check Kiosk URL is: ' + kioskUrl);
-    // Only update the Kiosk URL if the deviceId isn't present and the keyword is
-    if(!kioskUrl.includes(deviceId) && kioskUrl.includes(keyword)){
-      const newUrl = kioskUrl.replace(keyword, deviceId);
-      console.log('Updating Kiosk URL to: ' + newUrl)
-      xapi.Config.UserInterface.Kiosk.URL.set(newUrl);
-    } else {
-      console.log('Kiosk URL unmodified');
-    }
-  })
-  .catch(err => {
-    console.log(err);
-    console.log('Unabled to get Kiosk URL');
-  })
+function saveWebApp(webapp) {
+  console.log(`Updating WebApp [${webapp.Name}] URL with Device Id`)
+  const panel = `<Extensions>
+  <Panel>
+    <Order>${webapp.Order}</Order>
+    <Location>${webapp.Location}</Location>
+    <Icon>Custom</Icon>
+    <Name>${webapp.Name}</Name>
+    <ActivityType>WebApp</ActivityType>
+    <ActivityData>${webapp.ActivityData}</ActivityData>
+    <CustomIcon>
+      <Content/>
+      <Id>${webapp.CustomIcon.Id}</Id>
+    </CustomIcon>
+  </Panel>
+  </Extensions>`
+
+  return xapi.Command.UserInterface.Extensions.Panel.Save(
+    { PanelId: webapp.PanelId }, panel);
 }
