@@ -1,6 +1,6 @@
 # Kiosk PWA URL Modifier
 
-This example macro shows how you can automatically add a Webex Devices Device Id as a URL parameter to either the Kiosk or PWA URL.
+This example macro shows how you can automatically adds the Webex Devices Device Id to the Kiosk, Signage, PWA or Web App URLs on a Webex Device
 
 This is useful if you wish to identify which device loaded your Web App. This approach makes it convenient to use a single URL template for multiple devices and let the macro do the hard work of customising the URL.
 
